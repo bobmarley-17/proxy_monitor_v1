@@ -1,0 +1,708 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Blocklist - ProxyMonitor{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex justify-between items-center">
+    <div>
+        <h2 class="text-2xl font-bold text-white">Blocklist Management</h2>
+        <p class="text-gray-500">Manage blocked domains, IPs, ports, and rules</p>
+    </div>
+    <div class="flex items-center gap-3">
+        <label class="flex items-center gap-2 text-sm text-gray-400">
+            <input type="checkbox" id="showDisabled" {% if show_disabled %}checked{% endif %}
+                   class="rounded bg-dark-800 border-gray-600 text-blue-500 focus:ring-blue-500"
+                   onchange="toggleShowDisabled()">
+            Show disabled rules
+        </label>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-dark-900 rounded-xl border border-gray-800 p-4">
+        <div class="text-gray-400 text-sm">Blocked Domains</div>
+        <div class="text-2xl font-bold text-white">{{ domain_count }}</div>
+        <div class="text-xs text-gray-500">{{ domain_total }} total</div>
+    </div>
+    <div class="bg-dark-900 rounded-xl border border-gray-800 p-4">
+        <div class="text-gray-400 text-sm">Blocked IPs</div>
+        <div class="text-2xl font-bold text-white">{{ ip_count }}</div>
+        <div class="text-xs text-gray-500">{{ ip_total }} total</div>
+    </div>
+    <div class="bg-dark-900 rounded-xl border border-gray-800 p-4">
+        <div class="text-gray-400 text-sm">Blocked Ports</div>
+        <div class="text-2xl font-bold text-white">{{ port_count }}</div>
+        <div class="text-xs text-gray-500">{{ port_total }} total</div>
+    </div>
+    <div class="bg-dark-900 rounded-xl border border-gray-800 p-4">
+        <div class="text-gray-400 text-sm">Custom Rules</div>
+        <div class="text-2xl font-bold text-white">{{ rule_count }}</div>
+        <div class="text-xs text-gray-500">{{ rule_total }} total</div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="mb-6">
+    <div class="flex gap-2 border-b border-gray-800">
+        <button onclick="showTab('domains')" id="tab-domains" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-blue-500 text-blue-400">
+            <i class="fas fa-globe mr-2"></i>Domains
+        </button>
+        <button onclick="showTab('ips')" id="tab-ips" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-white">
+            <i class="fas fa-network-wired mr-2"></i>IPs
+        </button>
+        <button onclick="showTab('ports')" id="tab-ports" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-white">
+            <i class="fas fa-plug mr-2"></i>Ports
+        </button>
+        <button onclick="showTab('rules')" id="tab-rules" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-white">
+            <i class="fas fa-gavel mr-2"></i>Rules
+        </button>
+    </div>
+</div>
+
+<!-- Domains Tab -->
+<div id="panel-domains" class="tab-panel">
+    <div class="bg-dark-900 rounded-xl border border-gray-800 p-5">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-semibold text-white">Blocked Domains</h3>
+            <button onclick="showAddModal('domain')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm">
+                <i class="fas fa-plus mr-1"></i>Add Domain
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-gray-500 text-xs uppercase border-b border-gray-800">
+                        <th class="text-left py-2 px-2">Status</th>
+                        <th class="text-left py-2 px-2">Domain</th>
+                        <th class="text-left py-2 px-2">Category</th>
+                        <th class="text-left py-2 px-2">Reason</th>
+                        <th class="text-right py-2 px-2">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                    {% for domain in blocked_domains %}
+                    <tr class="hover:bg-dark-800 {% if not domain.is_active %}opacity-50{% endif %}" id="domain-row-{{ domain.id }}">
+                        <td class="py-2 px-2">
+                            <button onclick="confirmToggle('domain', {{ domain.id }}, '{{ domain.domain }}', {{ domain.is_active|yesno:'true,false' }})" 
+                                    class="w-10 h-5 rounded-full transition-colors relative {% if domain.is_active %}bg-green-600{% else %}bg-gray-600{% endif %}"
+                                    title="{% if domain.is_active %}Click to disable{% else %}Click to enable{% endif %}">
+                                <span class="absolute w-4 h-4 bg-white rounded-full top-0.5 transition-transform {% if domain.is_active %}left-5{% else %}left-0.5{% endif %}"></span>
+                            </button>
+                        </td>
+                        <td class="py-2 px-2 font-mono text-gray-300">{{ domain.domain }}</td>
+                        <td class="py-2 px-2">
+                            <span class="px-2 py-0.5 rounded text-xs bg-blue-900/50 text-blue-400">{{ domain.category }}</span>
+                        </td>
+                        <td class="py-2 px-2 text-gray-500">{{ domain.reason|default:"-"|truncatechars:40 }}</td>
+                        <td class="py-2 px-2 text-right space-x-2">
+                            <button onclick="showEditModal('domain', {{ domain.id }}, '{{ domain.domain }}', '{{ domain.category }}', '{{ domain.reason|default:'' }}')" 
+                                    class="text-blue-400 hover:text-blue-300" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="confirmDelete('domain', {{ domain.id }}, '{{ domain.domain }}')" 
+                                    class="text-red-400 hover:text-red-300" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="py-8 text-center text-gray-500">No blocked domains</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- IPs Tab -->
+<div id="panel-ips" class="tab-panel hidden">
+    <div class="bg-dark-900 rounded-xl border border-gray-800 p-5">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-semibold text-white">Blocked IPs</h3>
+            <button onclick="showAddModal('ip')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm">
+                <i class="fas fa-plus mr-1"></i>Add IP
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-gray-500 text-xs uppercase border-b border-gray-800">
+                        <th class="text-left py-2 px-2">Status</th>
+                        <th class="text-left py-2 px-2">IP Address</th>
+                        <th class="text-left py-2 px-2">Type</th>
+                        <th class="text-left py-2 px-2">Reason</th>
+                        <th class="text-right py-2 px-2">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                    {% for ip in blocked_ips %}
+                    <tr class="hover:bg-dark-800 {% if not ip.is_active %}opacity-50{% endif %}" id="ip-row-{{ ip.id }}">
+                        <td class="py-2 px-2">
+                            <button onclick="confirmToggle('ip', {{ ip.id }}, '{{ ip.ip_address }}', {{ ip.is_active|yesno:'true,false' }})" 
+                                    class="w-10 h-5 rounded-full transition-colors relative {% if ip.is_active %}bg-green-600{% else %}bg-gray-600{% endif %}"
+                                    title="{% if ip.is_active %}Click to disable{% else %}Click to enable{% endif %}">
+                                <span class="absolute w-4 h-4 bg-white rounded-full top-0.5 transition-transform {% if ip.is_active %}left-5{% else %}left-0.5{% endif %}"></span>
+                            </button>
+                        </td>
+                        <td class="py-2 px-2 font-mono text-gray-300">
+                            {{ ip.ip_address }}{% if ip.cidr_prefix %}/{{ ip.cidr_prefix }}{% endif %}
+                        </td>
+                        <td class="py-2 px-2">
+                            <span class="px-2 py-0.5 rounded text-xs bg-purple-900/50 text-purple-400">{{ ip.ip_type }}</span>
+                        </td>
+                        <td class="py-2 px-2 text-gray-500">{{ ip.reason|default:"-"|truncatechars:40 }}</td>
+                        <td class="py-2 px-2 text-right space-x-2">
+                            <button onclick="showEditModal('ip', {{ ip.id }}, '{{ ip.ip_address }}', '{{ ip.ip_type }}', '{{ ip.reason|default:'' }}', '{{ ip.cidr_prefix|default:'' }}')" 
+                                    class="text-blue-400 hover:text-blue-300" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="confirmDelete('ip', {{ ip.id }}, '{{ ip.ip_address }}')" 
+                                    class="text-red-400 hover:text-red-300" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="py-8 text-center text-gray-500">No blocked IPs</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Ports Tab -->
+<div id="panel-ports" class="tab-panel hidden">
+    <div class="bg-dark-900 rounded-xl border border-gray-800 p-5">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-semibold text-white">Blocked Ports</h3>
+            <button onclick="showAddModal('port')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm">
+                <i class="fas fa-plus mr-1"></i>Add Port
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-gray-500 text-xs uppercase border-b border-gray-800">
+                        <th class="text-left py-2 px-2">Status</th>
+                        <th class="text-left py-2 px-2">Port</th>
+                        <th class="text-left py-2 px-2">Protocol</th>
+                        <th class="text-left py-2 px-2">Type</th>
+                        <th class="text-left py-2 px-2">Reason</th>
+                        <th class="text-right py-2 px-2">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                    {% for port in blocked_ports %}
+                    <tr class="hover:bg-dark-800 {% if not port.is_active %}opacity-50{% endif %}" id="port-row-{{ port.id }}">
+                        <td class="py-2 px-2">
+                            <button onclick="confirmToggle('port', {{ port.id }}, '{{ port.port }}', {{ port.is_active|yesno:'true,false' }})" 
+                                    class="w-10 h-5 rounded-full transition-colors relative {% if port.is_active %}bg-green-600{% else %}bg-gray-600{% endif %}"
+                                    title="{% if port.is_active %}Click to disable{% else %}Click to enable{% endif %}">
+                                <span class="absolute w-4 h-4 bg-white rounded-full top-0.5 transition-transform {% if port.is_active %}left-5{% else %}left-0.5{% endif %}"></span>
+                            </button>
+                        </td>
+                        <td class="py-2 px-2 font-mono text-gray-300">
+                            {{ port.port }}{% if port.port_end %}-{{ port.port_end }}{% endif %}
+                        </td>
+                        <td class="py-2 px-2">
+                            <span class="px-2 py-0.5 rounded text-xs bg-yellow-900/50 text-yellow-400">{{ port.protocol }}</span>
+                        </td>
+                        <td class="py-2 px-2 text-gray-400">{{ port.port_type }}</td>
+                        <td class="py-2 px-2 text-gray-500">{{ port.reason|default:"-"|truncatechars:30 }}</td>
+                        <td class="py-2 px-2 text-right space-x-2">
+                            <button onclick="showEditModal('port', {{ port.id }}, '{{ port.port }}', '{{ port.protocol }}', '{{ port.reason|default:'' }}', '{{ port.port_type }}', '{{ port.port_end|default:'' }}')" 
+                                    class="text-blue-400 hover:text-blue-300" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="confirmDelete('port', {{ port.id }}, '{{ port.port }}')" 
+                                    class="text-red-400 hover:text-red-300" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="py-8 text-center text-gray-500">No blocked ports</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Rules Tab -->
+<div id="panel-rules" class="tab-panel hidden">
+    <div class="bg-dark-900 rounded-xl border border-gray-800 p-5">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-semibold text-white">Custom Rules</h3>
+            <button onclick="showAddModal('rule')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm">
+                <i class="fas fa-plus mr-1"></i>Add Rule
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-gray-500 text-xs uppercase border-b border-gray-800">
+                        <th class="text-left py-2 px-2">Status</th>
+                        <th class="text-left py-2 px-2">Priority</th>
+                        <th class="text-left py-2 px-2">Name</th>
+                        <th class="text-left py-2 px-2">Action</th>
+                        <th class="text-left py-2 px-2">Pattern</th>
+                        <th class="text-left py-2 px-2">Reason</th>
+                        <th class="text-right py-2 px-2">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                    {% for rule in block_rules %}
+                    <tr class="hover:bg-dark-800 {% if not rule.is_active %}opacity-50{% endif %}" id="rule-row-{{ rule.id }}">
+                        <td class="py-2 px-2">
+                            <button onclick="confirmToggle('rule', {{ rule.id }}, '{{ rule.name }}', {{ rule.is_active|yesno:'true,false' }})" 
+                                    class="w-10 h-5 rounded-full transition-colors relative {% if rule.is_active %}bg-green-600{% else %}bg-gray-600{% endif %}"
+                                    title="{% if rule.is_active %}Click to disable{% else %}Click to enable{% endif %}">
+                                <span class="absolute w-4 h-4 bg-white rounded-full top-0.5 transition-transform {% if rule.is_active %}left-5{% else %}left-0.5{% endif %}"></span>
+                            </button>
+                        </td>
+                        <td class="py-2 px-2 text-gray-400">{{ rule.priority }}</td>
+                        <td class="py-2 px-2 text-white font-medium">{{ rule.name }}</td>
+                        <td class="py-2 px-2">
+                            {% if rule.action == 'block' %}
+                            <span class="px-2 py-0.5 rounded text-xs bg-red-900/50 text-red-400">Block</span>
+                            {% elif rule.action == 'allow' %}
+                            <span class="px-2 py-0.5 rounded text-xs bg-green-900/50 text-green-400">Allow</span>
+                            {% else %}
+                            <span class="px-2 py-0.5 rounded text-xs bg-blue-900/50 text-blue-400">Log</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 px-2 text-gray-500 font-mono text-xs">{{ rule.domain_pattern|default:"-" }}</td>
+                        <td class="py-2 px-2 text-gray-500 text-xs">{{ rule.reason|default:"-"|truncatechars:25 }}</td>
+                        <td class="py-2 px-2 text-right space-x-2">
+                            <button onclick="showEditModal('rule', {{ rule.id }}, '{{ rule.name }}', '{{ rule.action }}', '{{ rule.reason|default:'' }}', '{{ rule.priority }}', '{{ rule.domain_pattern|default:'' }}', '{{ rule.source_ip|default:'' }}', '{{ rule.dest_ip|default:'' }}')" 
+                                    class="text-blue-400 hover:text-blue-300" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="confirmDelete('rule', {{ rule.id }}, '{{ rule.name }}')" 
+                                    class="text-red-400 hover:text-red-300" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="py-8 text-center text-gray-500">No custom rules</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div id="confirmModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div class="bg-dark-900 rounded-xl border border-gray-700 p-6 w-full max-w-md shadow-2xl">
+        <div class="text-center mb-4">
+            <div id="confirmIcon" class="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4"></div>
+            <h3 id="confirmTitle" class="text-xl font-bold text-white mb-2"></h3>
+            <p id="confirmMessage" class="text-gray-400"></p>
+        </div>
+        <div class="flex gap-3 mt-6">
+            <button onclick="hideConfirmModal()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2.5 rounded-lg font-medium transition">
+                Cancel
+            </button>
+            <button id="confirmBtn" onclick="executeConfirmedAction()" class="flex-1 px-4 py-2.5 rounded-lg font-medium transition">
+                Confirm
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div id="formModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div class="bg-dark-900 rounded-xl border border-gray-700 p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold text-white" id="formModalTitle">Add Item</h3>
+            <button onclick="hideFormModal()" class="text-gray-500 hover:text-white">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form id="itemForm" onsubmit="submitForm(event)">
+            <input type="hidden" id="formMode" value="add">
+            <input type="hidden" id="formType" value="">
+            <input type="hidden" id="formId" value="">
+            <div id="formFields" class="space-y-4"></div>
+            <div class="flex gap-3 mt-6">
+                <button type="button" onclick="hideFormModal()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2.5 rounded-lg font-medium transition">
+                    Cancel
+                </button>
+                <button type="submit" id="formSubmitBtn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-medium transition">
+                    <i class="fas fa-save mr-2"></i>Save
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let currentType = 'domain';
+    let pendingAction = null;
+
+    // Tab switching
+    function showTab(tab) {
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+        document.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.remove('border-blue-500', 'text-blue-400');
+            b.classList.add('border-transparent', 'text-gray-400');
+        });
+        
+        document.getElementById('panel-' + tab).classList.remove('hidden');
+        const btn = document.getElementById('tab-' + tab);
+        btn.classList.remove('border-transparent', 'text-gray-400');
+        btn.classList.add('border-blue-500', 'text-blue-400');
+    }
+
+    function toggleShowDisabled() {
+        const checked = document.getElementById('showDisabled').checked;
+        window.location.href = '/blocklist/?show_disabled=' + checked;
+    }
+
+    // Confirmation Modal
+    function showConfirmModal(title, message, type, btnClass, btnText) {
+        const modal = document.getElementById('confirmModal');
+        const icon = document.getElementById('confirmIcon');
+        const btn = document.getElementById('confirmBtn');
+        
+        document.getElementById('confirmTitle').textContent = title;
+        document.getElementById('confirmMessage').textContent = message;
+        
+        if (type === 'danger') {
+            icon.innerHTML = '<i class="fas fa-exclamation-triangle text-3xl text-red-400"></i>';
+            icon.className = 'w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 bg-red-900/30';
+            btn.className = 'flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg font-medium transition';
+        } else if (type === 'warning') {
+            icon.innerHTML = '<i class="fas fa-power-off text-3xl text-yellow-400"></i>';
+            icon.className = 'w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 bg-yellow-900/30';
+            btn.className = 'flex-1 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2.5 rounded-lg font-medium transition';
+        } else {
+            icon.innerHTML = '<i class="fas fa-check-circle text-3xl text-green-400"></i>';
+            icon.className = 'w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 bg-green-900/30';
+            btn.className = 'flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-medium transition';
+        }
+        
+        btn.innerHTML = btnText || 'Confirm';
+        modal.classList.remove('hidden');
+    }
+
+    function hideConfirmModal() {
+        document.getElementById('confirmModal').classList.add('hidden');
+        pendingAction = null;
+    }
+
+    function executeConfirmedAction() {
+        if (pendingAction) {
+            pendingAction();
+        }
+        hideConfirmModal();
+    }
+
+    // Toggle confirmation
+    function confirmToggle(type, id, name, isActive) {
+        const action = isActive ? 'disable' : 'enable';
+        const title = isActive ? 'Disable Rule?' : 'Enable Rule?';
+        const message = isActive 
+            ? `Are you sure you want to disable "${name}"? This will stop blocking this ${type}.`
+            : `Are you sure you want to enable "${name}"? This will start blocking this ${type}.`;
+        
+        pendingAction = () => toggleItem(type, id);
+        showConfirmModal(title, message, isActive ? 'warning' : 'success', '', isActive ? 'Disable' : 'Enable');
+    }
+
+    // Delete confirmation
+    function confirmDelete(type, id, name) {
+        pendingAction = () => deleteItem(type, id);
+        showConfirmModal(
+            'Delete Permanently?', 
+            `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+            'danger',
+            '',
+            '<i class="fas fa-trash mr-2"></i>Delete'
+        );
+    }
+
+    // API calls
+    async function toggleItem(type, id) {
+        try {
+            const url = `/api/blocklist/${type}s/${id}/toggle/`;
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            });
+            
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showToast(data.error || 'Error toggling item', 'error');
+            }
+        } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+        }
+    }
+
+    async function deleteItem(type, id) {
+        try {
+            const url = `/api/blocklist/${type}s/${id}/`;
+            const res = await fetch(url, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+            });
+            
+            if (res.ok) {
+                showToast('Deleted successfully', 'success');
+                setTimeout(() => location.reload(), 500);
+            } else {
+                const data = await res.json();
+                showToast(data.error || 'Error deleting item', 'error');
+            }
+        } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+        }
+    }
+
+    // Form Modal
+    function hideFormModal() {
+        document.getElementById('formModal').classList.add('hidden');
+    }
+
+    function showAddModal(type) {
+        document.getElementById('formMode').value = 'add';
+        document.getElementById('formType').value = type;
+        document.getElementById('formId').value = '';
+        document.getElementById('formModalTitle').textContent = 'Add ' + type.charAt(0).toUpperCase() + type.slice(1);
+        document.getElementById('formSubmitBtn').innerHTML = '<i class="fas fa-plus mr-2"></i>Add';
+        
+        renderFormFields(type, {});
+        document.getElementById('formModal').classList.remove('hidden');
+    }
+
+    function showEditModal(type, id, ...args) {
+        document.getElementById('formMode').value = 'edit';
+        document.getElementById('formType').value = type;
+        document.getElementById('formId').value = id;
+        document.getElementById('formModalTitle').textContent = 'Edit ' + type.charAt(0).toUpperCase() + type.slice(1);
+        document.getElementById('formSubmitBtn').innerHTML = '<i class="fas fa-save mr-2"></i>Save Changes';
+        
+        let data = {};
+        if (type === 'domain') {
+            data = { domain: args[0], category: args[1], reason: args[2] };
+        } else if (type === 'ip') {
+            data = { ip_address: args[0], ip_type: args[1], reason: args[2], cidr_prefix: args[3] };
+        } else if (type === 'port') {
+            data = { port: args[0], protocol: args[1], reason: args[2], port_type: args[3], port_end: args[4] };
+        } else if (type === 'rule') {
+            data = { name: args[0], action: args[1], reason: args[2], priority: args[3], domain_pattern: args[4], source_ip: args[5], dest_ip: args[6] };
+        }
+        
+        renderFormFields(type, data);
+        document.getElementById('formModal').classList.remove('hidden');
+    }
+
+    function renderFormFields(type, data) {
+        const container = document.getElementById('formFields');
+        
+        const templates = {
+            domain: `
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">Domain <span class="text-red-400">*</span></label>
+                    <input type="text" name="domain" value="${data.domain || ''}" required placeholder="example.com or *.example.com" 
+                           class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">Category</label>
+                    <select name="category" class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                        <option value="custom" ${data.category === 'custom' ? 'selected' : ''}>Custom</option>
+                        <option value="ads" ${data.category === 'ads' ? 'selected' : ''}>Ads</option>
+                        <option value="malware" ${data.category === 'malware' ? 'selected' : ''}>Malware</option>
+                        <option value="social" ${data.category === 'social' ? 'selected' : ''}>Social Media</option>
+                        <option value="streaming" ${data.category === 'streaming' ? 'selected' : ''}>Streaming</option>
+                        <option value="gaming" ${data.category === 'gaming' ? 'selected' : ''}>Gaming</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">Reason</label>
+                    <input type="text" name="reason" value="${data.reason || ''}" placeholder="Optional description" 
+                           class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                </div>
+            `,
+            ip: `
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">IP Address <span class="text-red-400">*</span></label>
+                    <input type="text" name="ip_address" value="${data.ip_address || ''}" required placeholder="192.168.1.1" 
+                           class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">CIDR Prefix (optional)</label>
+                    <input type="number" name="cidr_prefix" value="${data.cidr_prefix || ''}" min="1" max="32" placeholder="24" 
+                           class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">Type</label>
+                    <select name="ip_type" class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                        <option value="both" ${data.ip_type === 'both' ? 'selected' : ''}>Both (Source & Destination)</option>
+                        <option value="source" ${data.ip_type === 'source' ? 'selected' : ''}>Source Only</option>
+                        <option value="destination" ${data.ip_type === 'destination' ? 'selected' : ''}>Destination Only</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">Reason</label>
+                    <input type="text" name="reason" value="${data.reason || ''}" placeholder="Optional description" 
+                           class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                </div>
+            `,
+            port: `
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-gray-400 text-sm block mb-1">Port Start <span class="text-red-400">*</span></label>
+                        <input type="number" name="port" value="${data.port || ''}" required min="1" max="65535" 
+                               class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-gray-400 text-sm block mb-1">Port End (for range)</label>
+                        <input type="number" name="port_end" value="${data.port_end || ''}" min="1" max="65535" 
+                               class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-gray-400 text-sm block mb-1">Protocol</label>
+                        <select name="protocol" class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                            <option value="both" ${data.protocol === 'both' ? 'selected' : ''}>Both (TCP & UDP)</option>
+                            <option value="tcp" ${data.protocol === 'tcp' ? 'selected' : ''}>TCP</option>
+                            <option value="udp" ${data.protocol === 'udp' ? 'selected' : ''}>UDP</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-gray-400 text-sm block mb-1">Type</label>
+                        <select name="port_type" class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                            <option value="destination" ${data.port_type === 'destination' ? 'selected' : ''}>Destination</option>
+                            <option value="source" ${data.port_type === 'source' ? 'selected' : ''}>Source</option>
+                            <option value="both" ${data.port_type === 'both' ? 'selected' : ''}>Both</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">Reason</label>
+                    <input type="text" name="reason" value="${data.reason || ''}" placeholder="Optional description" 
+                           class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                </div>
+            `,
+            rule: `
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-gray-400 text-sm block mb-1">Name <span class="text-red-400">*</span></label>
+                        <input type="text" name="name" value="${data.name || ''}" required placeholder="Rule name" 
+                               class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-gray-400 text-sm block mb-1">Priority</label>
+                        <input type="number" name="priority" value="${data.priority || 100}" min="1" max="9999" 
+                               class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">Action</label>
+                    <select name="action" class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                        <option value="block" ${data.action === 'block' ? 'selected' : ''}>Block</option>
+                        <option value="allow" ${data.action === 'allow' ? 'selected' : ''}>Allow</option>
+                        <option value="log" ${data.action === 'log' ? 'selected' : ''}>Log Only</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">Domain Pattern</label>
+                    <input type="text" name="domain_pattern" value="${data.domain_pattern || ''}" placeholder="*.example.com" 
+                           class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                    <p class="text-xs text-gray-500 mt-1">Use * for wildcard matching</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-gray-400 text-sm block mb-1">Source IP</label>
+                        <input type="text" name="source_ip" value="${data.source_ip || ''}" placeholder="10.0.0.0/8" 
+                               class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-gray-400 text-sm block mb-1">Destination IP</label>
+                        <input type="text" name="dest_ip" value="${data.dest_ip || ''}" placeholder="192.168.0.0/16" 
+                               class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-gray-400 text-sm block mb-1">Reason</label>
+                    <input type="text" name="reason" value="${data.reason || ''}" placeholder="Why this rule exists" 
+                           class="w-full bg-dark-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none">
+                </div>
+            `
+        };
+        
+        container.innerHTML = templates[type] || '';
+    }
+
+    async function submitForm(e) {
+        e.preventDefault();
+        
+        const mode = document.getElementById('formMode').value;
+        const type = document.getElementById('formType').value;
+        const id = document.getElementById('formId').value;
+        const form = document.getElementById('itemForm');
+        const formData = Object.fromEntries(new FormData(form));
+        
+        // Clean empty values
+        Object.keys(formData).forEach(key => {
+            if (formData[key] === '') delete formData[key];
+        });
+        
+        const baseUrl = `/api/blocklist/${type}s/`;
+        const url = mode === 'edit' ? `${baseUrl}${id}/` : baseUrl;
+        const method = mode === 'edit' ? 'PUT' : 'POST';
+        
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify(formData)
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                showToast(data.message || (mode === 'edit' ? 'Updated successfully' : 'Added successfully'), 'success');
+                hideFormModal();
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showToast(data.error || 'An error occurred', 'error');
+            }
+        } catch (err) {
+            showToast('Error: ' + err.message, 'error');
+        }
+    }
+
+    // Close modals on escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            hideConfirmModal();
+            hideFormModal();
+        }
+    });
+
+    // Close modals when clicking outside
+    document.getElementById('confirmModal').addEventListener('click', function(e) {
+        if (e.target === this) hideConfirmModal();
+    });
+    document.getElementById('formModal').addEventListener('click', function(e) {
+        if (e.target === this) hideFormModal();
+    });
+</script>
+{% endblock %}
